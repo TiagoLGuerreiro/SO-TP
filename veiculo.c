@@ -17,7 +17,7 @@ int main(int argc, char *argv[]) {
     printf("[VEICULO %d] Recebido. Distância: %d km.\n", id_servico, km_distancia);
     printf("[VEICULO %d] A caminho do cliente.\n", id_servico);
 
-    for (int i = 1; i <= 3; i++){
+    for (int i = 1; i <= 10; i++){
         sleep(1); //simula a viagem esperando 1 segundo
         printf("[VEICULO %d] TELEMETRIA: %d%% concluido.\n", id_servico, i * 10);
     }
