@@ -6,12 +6,12 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-#define FIFO_CLIENTE "/tmp/fifo_cliente" //caminho do FIFO do cliente
+#define FIFO_CLIENTE "/tmp/SO_TAXI_PEDIDOS" //caminho do FIFO do cliente
 
 void enviar_comando(const char *mensagem) { //função para enviar comando ao controlador
     int fd = open(FIFO_CLIENTE, O_WRONLY); // abre FIFO para escrever
     if (fd < 0) { // se der erro ao abrir o FIFO
-        strerror("Cliente: Erro ao abrir FIFO"); //mostra que deu erro
+        perror("Cliente: Erro ao abrir FIFO"); //mostra que deu erro
         return;
     }
     write(fd, mensagem, strlen(mensagem) + 1); // inclui o '\0'

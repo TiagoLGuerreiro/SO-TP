@@ -5,10 +5,12 @@
 #include <sys/types.h> // para mkfifo()
 #include <sys/stat.h>  // para mkfifo()
 #include <fcntl.h>     // para open()
+#include <string.h>
 
 #define VEICULO_EXEC "./veiculo"
 #define MAX_TELEMETRIA_MSG 256
 #define FIFO_CONTROLLER_REQUESTS "/tmp/SO_TAXI_PEDIDOS"
+#define MAX_COMMAND_SIZE 1024 // tamanho maximo de uma msg
 
 void veiculo_start_ler_telemetria(){
     int pipe_fd[2]; //0 - leitura (controlador) 1 - escrita (veiculo)
@@ -77,6 +79,36 @@ void cliente_com(){
         exit(EXIT_FAILURE);
     }
     printf("[CONTROLADOR] FIFO aberto. À espera do primeiro cliente...\n");
+
+    char buffer[MAX_COMMAND_SIZE];
+    ssize_t bytes_read;
+
+    while(1){
+        // espera pelos dados, quando o cliente fechar o pipe retorna 0
+        bytes_read = read(request_fd, buffer, MAX_COMMAND_SIZE - 1);
+
+        if(bytes_read > 0){
+            buffer[bytes_read] = '\0'; //termina a string
+            printf("\n[CONTROLADOR] COMANDO RECEBIDO: %s", buffer);
+        } else if(bytes_read == 0){
+            // quando o cliente fecha o pipe o controlador reabre o
+            printf("[CONTROLADOR] Cliente desconectou-se do FIFO. Reabrindo...\n");
+            close(request_fd);
+
+            request_fd = open(FIFO_CONTROLLER_REQUESTS, O_RDONLY);
+            if(request_fd == -1){
+                perror("[CONTROLADOR] Erro ao abrir o FIFO");
+                exit(EXIT_FAILURE);
+            }
+            printf("[CONTROLADOR] FIFO reaberto. À espera de novos pedidos...\n");
+        } else {
+            perror("[CONTROLADOR] Erro durante a leitura do FIFO");
+            break; // sai do loop em caso de erro
+        }
+    }
+
+    close(request_fd);
+    unlink(FIFO_CONTROLLER_REQUESTS);
 }
 
 int main(int argc, char *argv[]) {
