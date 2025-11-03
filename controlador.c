@@ -83,7 +83,7 @@ int main(int argc, char *argv[]) {
     //printf("--- INÍCIO DA SIMULAÇÃO (Controlador) ---\n");
     //veiculo_start_ler_telemetria(); // lançar a função de simulação
 
-    setup_controller_ipc();
+    cliente_com();
 
     return 0;
 }
