@@ -2,13 +2,16 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <string.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
 
 #define FIFO_CLIENTE "/tmp/fifo_cliente" //caminho do FIFO do cliente
 
 void enviar_comando(const char *mensagem) { //função para enviar comando ao controlador
     int fd = open(FIFO_CLIENTE, O_WRONLY); // abre FIFO para escrever
     if (fd < 0) { // se der erro ao abrir o FIFO
-        perror("Cliente: Erro ao abrir FIFO"); //mostra que deu erro
+        strerror("Cliente: Erro ao abrir FIFO"); //mostra que deu erro
         return;
     }
     write(fd, mensagem, strlen(mensagem) + 1); // inclui o '\0'
