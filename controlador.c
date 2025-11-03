@@ -2,9 +2,13 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/wait.h> // usa se na funçao waitpid
+#include <sys/types.h> // para mkfifo()
+#include <sys/stat.h>  // para mkfifo()
+#include <fcntl.h>     // para open()
 
 #define VEICULO_EXEC "./veiculo"
 #define MAX_TELEMETRIA_MSG 256
+#define FIFO_CONTROLLER_REQUESTS "/tmp/SO_TAXI_PEDIDOS"
 
 void veiculo_start_ler_telemetria(){
     int pipe_fd[2]; //0 - leitura (controlador) 1 - escrita (veiculo)
@@ -54,9 +58,32 @@ void veiculo_start_ler_telemetria(){
     }
 }
 
+void cliente_com(){
+    // tenta remover o FIFO se já existir (para garantir um início limpo)
+    unlink(FIFO_CONTROLLER_REQUESTS);
+
+    //mkfifo cria o Named pipe, vai dar permissoes de leitura/escrita ao utilizador (0666)
+    if(mkfifo(FIFO_CONTROLLER_REQUESTS, 0666) == -1){
+        perror("[CONTROLADOR] Erro ao criar FIFO");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("[CONTROLADOR] FIFO de Pedidos ('%s') criado com sucesso.\n", FIFO_CONTROLLER_REQUESTS);
+
+    // abre o FIFO em modo de leitura, o Controlador para aqui até que o primeiro Cliente abra o pipe para escrever.
+    int request_fd = open(FIFO_CONTROLLER_REQUESTS, O_RDONLY);
+    if (request_fd == -1) {
+        perror("[CONTROLADOR] Erro ao abrir FIFO para leitura");
+        exit(EXIT_FAILURE);
+    }
+    printf("[CONTROLADOR] FIFO aberto. À espera do primeiro cliente...\n");
+}
+
 int main(int argc, char *argv[]) {
-    printf("--- INÍCIO DA SIMULAÇÃO (Controlador) ---\n");
-    veiculo_start_ler_telemetria(); // lançar a função de simulação
+    //printf("--- INÍCIO DA SIMULAÇÃO (Controlador) ---\n");
+    //veiculo_start_ler_telemetria(); // lançar a função de simulação
+
+    setup_controller_ipc();
 
     return 0;
 }
