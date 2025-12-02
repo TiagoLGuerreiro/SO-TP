@@ -46,36 +46,79 @@ int main(int argc, char *argv[]) {
     unlink(my_pipe); // Apaga o pipe depois de usar
 
     // 5. Verificar Login
+    // 5. Verificar Login
     if (resp.success) {
         printf("\n=== LOGIN SUCESSO ===\n");
         printf("Msg: %s\n", resp.message);
-        printf("A aguardar comandos (digite 'terminar' para terminar)...\n");
-        
-        // Loop simples para não terminar logo
-        char cmd[100];
-        while(1) {
-        printf("> ");
-        scanf("%s", cmd);
-        if(strcmp(cmd, "terminar")==0) {
-            // AVISAR O CONTROLADOR QUE VOU SAIR
-            ClientRequest req_out;
-            req_out.command_type = CMD_SAIR;
-            req_out.pid = getpid();
-            // Não precisamos de preencher username ou pipe para sair, o PID chega
 
-            int fd_req = open(FIFO_CONTROLLER_REQUESTS, O_WRONLY);
-            if(fd_req != -1) {
-                write(fd_req, &req_out, sizeof(ClientRequest));
-                close(fd_req);
+        // --- INÍCIO DA ALTERAÇÃO ---
+
+        // NÃO feche nem apague o pipe aqui! Precisamos dele para o futuro.
+        // close(fd_resp);  <-- REMOVER
+        // unlink(my_pipe); <-- REMOVER (Mover para o fim)
+
+        pid_t pid = fork();
+
+        if (pid == 0) {
+            // PROCESSO FILHO: Escuta o Controlador/Veículo
+            // Reabre o pipe para leitura contínua (bloqueante)
+            // Nota: O open anterior consumiu a msg de login, este open espera novas
+            int fd_leitura = open(my_pipe, O_RDONLY); 
+            ControllerResponse notificacao;
+
+            while(read(fd_leitura, &notificacao, sizeof(ControllerResponse)) > 0) {
+                printf("\n[INFO]: %s\n> ", notificacao.message);
+                fflush(stdout); // Forçar a escrita no ecrã
             }
-            break; // Sai do loop e termina
+            close(fd_leitura);
+            exit(0);
+        } 
+        else {
+            // PROCESSO PAI: Lê do utilizador
+            printf("A aguardar comandos (agendar, ler, sair)...\n> ");
+            char linha[100];
+            
+            // Usar fgets é melhor que scanf para ler linhas inteiras (com espaços)
+            while(fgets(linha, 100, stdin) != NULL) {
+                // Remover o \n do final
+                linha[strcspn(linha, "\n")] = 0;
+
+                if(strcmp(linha, "sair") == 0) {
+                    // Enviar pedido de saída
+                    ClientRequest req_out;
+                    req_out.command_type = CMD_SAIR;
+                    req_out.pid = getpid();
+                    int fd = open(FIFO_CONTROLLER_REQUESTS, O_WRONLY);
+                    write(fd, &req_out, sizeof(ClientRequest));
+                    close(fd);
+                    break;
+                }
+                else if (strncmp(linha, "agendar", 7) == 0) {
+                    // Preencher e enviar pedido de agendamento
+                    ClientRequest req_ag;
+                    req_ag.command_type = CMD_AGENDAR;
+                    req_ag.pid = getpid();
+                    strcpy(req_ag.username, username);
+                    // Copiar o resto da string (argumentos) para o campo 'data'
+                    strcpy(req_ag.data, linha + 8); // Pula "agendar "
+                    
+                    int fd = open(FIFO_CONTROLLER_REQUESTS, O_WRONLY);
+                    write(fd, &req_ag, sizeof(ClientRequest));
+                    close(fd);
+                }
+                printf("> ");
+            }
+            
+            // Matar o filho e limpar o FIFO ao sair
+            kill(pid, SIGKILL);
+            unlink(my_pipe);
         }
-    }
+        // --- FIM DA ALTERAÇÃO ---
 
     } else {
         printf("\n=== LOGIN ERRO ===\n");
-        printf("O servidor recusou a entrada.\n");
         printf("Motivo: %s\n", resp.message);
+        unlink(my_pipe); // Aqui sim, podemos apagar se falhou
     }
 
     return 0;
