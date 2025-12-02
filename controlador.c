@@ -11,6 +11,11 @@
 #define MAX_TELEMETRIA_MSG 256
 #define FIFO_CONTROLLER_REQUESTS "/tmp/SO_TAXI_PEDIDOS"
 #define MAX_COMMAND_SIZE 1024 // tamanho maximo de uma msg
+// No topo do controlador.c, adicione:
+#include "comum.h" 
+
+// E defina isto (o nome tem que ser igual ao do cliente)
+#define FIFO_CONTROLLER_REQUESTS "/tmp/SO_TAXI_PEDIDOS"
 
 void veiculo_start_ler_telemetria(){
     int pipe_fd[2]; //0 - leitura (controlador) 1 - escrita (veiculo)
@@ -64,7 +69,7 @@ void cliente_com(){
     // tenta remover o FIFO se já existir (para garantir um início limpo)
     unlink(FIFO_CONTROLLER_REQUESTS);
 
-    //mkfifo cria o Named pipe, vai dar permissoes de leitura/escrita ao utilizador (0666)
+    // mkfifo cria o Named pipe, vai dar permissoes de leitura/escrita ao utilizador (0666)
     if(mkfifo(FIFO_CONTROLLER_REQUESTS, 0666) == -1){
         perror("[CONTROLADOR] Erro ao criar FIFO");
         exit(EXIT_FAILURE);
@@ -72,7 +77,7 @@ void cliente_com(){
 
     printf("[CONTROLADOR] FIFO de Pedidos ('%s') criado com sucesso.\n", FIFO_CONTROLLER_REQUESTS);
 
-    // abre o FIFO em modo de leitura, o Controlador para aqui até que o primeiro Cliente abra o pipe para escrever.
+    // Abre o FIFO em modo de leitura, o Controlador para aqui até que o primeiro Cliente abra o pipe para escrever.
     int request_fd = open(FIFO_CONTROLLER_REQUESTS, O_RDONLY);
     if (request_fd == -1) {
         perror("[CONTROLADOR] Erro ao abrir FIFO para leitura");
@@ -80,18 +85,53 @@ void cliente_com(){
     }
     printf("[CONTROLADOR] FIFO aberto. À espera do primeiro cliente...\n");
 
-    char buffer[MAX_COMMAND_SIZE];
+    // Preparamos o buffer para a ESTRUTURA COMPLETA
+    ClientRequest request; 
     ssize_t bytes_read;
 
     while(1){
-        // espera pelos dados, quando o cliente fechar o pipe retorna 0
-        bytes_read = read(request_fd, buffer, MAX_COMMAND_SIZE - 1);
+        // AGORA LÊ A ESTRUTURA COMPLETA (sizeof(ClientRequest))
+        bytes_read = read(request_fd, &request, sizeof(ClientRequest));
 
-        if(bytes_read > 0){
-            buffer[bytes_read] = '\0'; //termina a string
-            printf("\n[CONTROLADOR] COMANDO RECEBIDO: %s", buffer);
+        if(bytes_read == sizeof(ClientRequest)){
+            printf("\n[CONTROLADOR] PEDIDO RECEBIDO:\n");
+            printf("  -> Tipo: %d (LOGIN)\n", request.command_type);
+            printf("  -> Username: %s\n", request.username);
+            printf("  -> PID do Cliente: %d\n", request.pid);
+            printf("  -> Pipe Resposta: %s\n", request.response_pipe_name);
+            
+            // ------------------------------------------------------------------
+            // AQUI ESTÁ A LÓGICA DE RESPOSTA (BIDIRECIONALIDADE)
+            // ------------------------------------------------------------------
+            
+            // 1. Preparar a mensagem de resposta
+            ControllerResponse response;
+            response.success = 1; // Supondo que o login é sempre OK por agora
+            strncpy(response.message, "Login aceite com sucesso.", MAX_MESSAGE - 1);
+            response.message[MAX_MESSAGE - 1] = '\0';
+            
+            // 2. Abrir o FIFO de resposta do Cliente em modo de ESCRITA
+            int response_fd = open(request.response_pipe_name, O_WRONLY);
+            if (response_fd == -1) {
+                // Se der erro, o cliente pode ter fechado ou falhado a criar o pipe
+                perror("[CONTROLADOR] ERRO ao abrir FIFO de resposta do Cliente");
+            } else {
+                // 3. Enviar a estrutura de resposta e fechar
+                if (write(response_fd, &response, sizeof(ControllerResponse)) == -1) {
+                    perror("[CONTROLADOR] ERRO ao escrever no FIFO de resposta");
+                }
+                close(response_fd);
+                printf("[CONTROLADOR] Resposta de Login enviada para %s.\n", request.username);
+            }
+            
+            // Continua a ler o FIFO de pedidos
+            
+        } else if(bytes_read > 0 && bytes_read < sizeof(ClientRequest)) {
+            // Se leu um número de bytes diferente do tamanho da struct, é um erro ou lixo
+            printf("[CONTROLADOR] Aviso: Leu dados incompletos ou corrompidos (%zd bytes).\n", bytes_read);
+
         } else if(bytes_read == 0){
-            // quando o cliente fecha o pipe o controlador reabre o
+            // Se o cliente fechar o pipe o controlador reabre o
             printf("[CONTROLADOR] Cliente desconectou-se do FIFO. Reabrindo...\n");
             close(request_fd);
 
@@ -103,7 +143,7 @@ void cliente_com(){
             printf("[CONTROLADOR] FIFO reaberto. À espera de novos pedidos...\n");
         } else {
             perror("[CONTROLADOR] Erro durante a leitura do FIFO");
-            break; // sai do loop em caso de erro
+            break; 
         }
     }
 
