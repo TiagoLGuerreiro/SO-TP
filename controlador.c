@@ -105,7 +105,6 @@ void cliente_com()
             {
                 printf("[LOGIN] Pedido de: %s (PID %d)\n", req.username, req.pid);
 
-                // Tenta registar
                 char erro[MAX_MESSAGE];
                 if (registar_cliente(req.username, req.pid, erro))
                 {
@@ -116,13 +115,13 @@ void cliente_com()
                 }
                 else
                 {
-                    // ERRO (Duplicado ou Cheio)
+                    // FALHA
                     resp.success = 0;
                     strcpy(resp.message, erro);
                     printf("[LOGIN] Recusado (%s): %s\n", req.username, erro);
                 }
 
-                // Enviar resposta pelo pipe privado do cliente
+                // Enviar resposta
                 int fd_resp = open(req.response_pipe_name, O_WRONLY);
                 if (fd_resp != -1)
                 {
@@ -130,13 +129,9 @@ void cliente_com()
                     close(fd_resp);
                 }
             }
-
-            if (req.command_type == CMD_LOGIN)
-            {
-                // ... (código de login que já tens) ...
-            }
             else if (req.command_type == CMD_SAIR)
             {
+                // Lógica de logout correta!
                 remover_cliente(req.pid);
             }
         }
