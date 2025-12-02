@@ -1,3 +1,4 @@
+// comum.h
 #ifndef COMUM_H
 #define COMUM_H
 
@@ -5,32 +6,24 @@
 #define MAX_PIPE_NAME 50
 #define MAX_MESSAGE 100
 
-// -----------------------------------------------------
-// ESTRUTURA DE PEDIDO (CLIENTE -> CONTROLADOR)
-// O Cliente usa isto para enviar pedidos de Login, Agendamento, etc.
-// -----------------------------------------------------
-typedef struct {
-    int pid;
-    char username[MAX_USERNAME];
-    // O nome do pipe pessoal para o Controlador responder (bidirecionalidade)
-    char response_pipe_name[MAX_PIPE_NAME]; 
-    // Campos para identificar o comando (usaremos mais tarde)
-    int command_type; // Ex: 1 para LOGIN, 2 para AGENDAR, etc.
-    char data[MAX_MESSAGE]; // Dados do comando (ex: "12 5km LISBOA")
-} ClientRequest;
-
-
-// -----------------------------------------------------
-// ESTRUTURA DE RESPOSTA (CONTROLADOR -> CLIENTE)
-// O Controlador usa isto para enviar confirmações/notificações.
-// -----------------------------------------------------
-typedef struct {
-    int success; // 1 = OK, 0 = FALHA
-    char message[MAX_MESSAGE];
-} ControllerResponse;
-
-// Tipos de comandos (constantes)
+// Tipos de comandos
 #define CMD_LOGIN 1
 #define CMD_AGENDAR 2
+#define CMD_SAIR 3
+
+// Estrutura enviada pelo Cliente -> Controlador
+typedef struct {
+    int command_type;                 // Tipo do comando (ex: CMD_LOGIN)
+    int pid;                          // PID do cliente
+    char username[MAX_USERNAME];      // Nome do utilizador
+    char response_pipe_name[MAX_PIPE_NAME]; // Pipe para resposta
+    char data[MAX_MESSAGE];           // Outros dados (opcional)
+} ClientRequest;
+
+// Estrutura enviada pelo Controlador -> Cliente
+typedef struct {
+    int success;                      // 1 = Sucesso, 0 = Erro
+    char message[MAX_MESSAGE];        // Mensagem explicativa
+} ControllerResponse;
 
 #endif
