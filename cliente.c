@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <string.h>
+#include <signal.h>
 #include "comum.h" // Importante!
 
 #define FIFO_CONTROLLER_REQUESTS "/tmp/SO_TAXI_PEDIDOS"
@@ -43,7 +44,6 @@ int main(int argc, char *argv[]) {
     ControllerResponse resp;
     read(fd_resp, &resp, sizeof(ControllerResponse));
     close(fd_resp);
-    unlink(my_pipe); // Apaga o pipe depois de usar
 
     // 5. Verificar Login
     // 5. Verificar Login
@@ -94,17 +94,43 @@ int main(int argc, char *argv[]) {
                     break;
                 }
                 else if (strncmp(linha, "agendar", 7) == 0) {
-                    // Preencher e enviar pedido de agendamento
                     ClientRequest req_ag;
                     req_ag.command_type = CMD_AGENDAR;
                     req_ag.pid = getpid();
                     strcpy(req_ag.username, username);
-                    // Copiar o resto da string (argumentos) para o campo 'data'
-                    strcpy(req_ag.data, linha + 8); // Pula "agendar "
+                    strcpy(req_ag.response_pipe_name, my_pipe); // <--- ADICIONA ISTO
+                    strcpy(req_ag.data, linha + 8); 
                     
                     int fd = open(FIFO_CONTROLLER_REQUESTS, O_WRONLY);
                     write(fd, &req_ag, sizeof(ClientRequest));
                     close(fd);
+                }
+                else if (strncmp(linha, "entrar", 6) == 0) {
+                    // O utilizador escreveu "entrar Lisboa"
+                    // Precisamos de saber QUAL é o pipe do veículo.
+                    // Simplificação: O utilizador tem de escrever o pipe que apareceu no ecrã?
+                    // Ou o comando é "entrar <pipe> <destino>"?
+                    
+                    // Como ainda não guardamos o estado no cliente, vamos fazer um truque para testar:
+                    // O utilizador vai escrever: entrar <pipe_do_veiculo> <destino>
+                    // Exemplo: entrar /tmp/veiculo_12345 Lisboa
+                    
+                    char pipe_veiculo[MAX_PIPE_NAME];
+                    char destino[50];
+                    
+                    if (sscanf(linha, "entrar %s %s", pipe_veiculo, destino) == 2) {
+                        int fd_v = open(pipe_veiculo, O_WRONLY);
+                        if (fd_v != -1) {
+                            // Enviar apenas a string "entrar Lisboa" ou só "Lisboa"
+                            write(fd_v, linha, strlen(linha)+1);
+                            close(fd_v);
+                            printf("Comando enviado para o veículo!\n");
+                        } else {
+                            printf("Erro: Não consegui abrir o pipe do veículo.\n");
+                        }
+                    } else {
+                        printf("Uso: entrar <pipe_veiculo> <destino>\n");
+                    }
                 }
                 printf("> ");
             }
