@@ -421,7 +421,7 @@ void cliente_com()
                 printf("[SISTEMA] Total Km percorridos: %lld km\n", total_km_percorridos);
             } else if (strcmp(cmd_buffer, "hora") == 0) {
                 printf("[SISTEMA] Tempo Simulado: T=%d\n", instante_atual);
-            } else if (strcmp(cmd_buffer, "cancelar") == 0) {
+            } else if (strncmp(cmd_buffer, "cancelar", 8) == 0) {
                 int id_cancelar;
                 if (sscanf(cmd_buffer, "cancelar %d", &id_cancelar) == 1){
                     int encontrado = 0;

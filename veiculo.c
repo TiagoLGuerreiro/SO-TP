@@ -7,7 +7,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <string.h>
-#include <signal.h> // Necessário para sinais
+#include <signal.h>
+#include <sys/time.h>
+#include <sys/select.h>
 #include "comum.h"
 
 // Variáveis globais para o handler aceder
@@ -72,25 +74,75 @@ int main(int argc, char *argv[]) {
     // 3. Esperar pelo comando "entrar" do Cliente
     printf("[VEICULO %d] A aguardar cliente...\n", id_servico_global);
     
-    int fd_veiculo = open(fifo_veiculo, O_RDONLY);
+    int fd_veiculo = open(fifo_veiculo, O_RDWR);
     char buffer[MAX_MESSAGE];
     
     // Ler do pipe. Esperamos algo como "entrar <destino>"
     if (read(fd_veiculo, buffer, sizeof(buffer)) > 0) {
         printf("[VEICULO %d] Cliente disse: %s. A iniciar viagem!\n", id_servico_global, buffer);
     }
-    close(fd_veiculo);
-    unlink(fifo_veiculo); // Apagar o pipe, já não precisamos dele para a viagem
 
-    // 4. Iniciar Viagem (Telemetria)
-    printf("[VEICULO %d] A caminho do destino...\n", id_servico_global);
+    // 4. Iniciar Viagem
+    printf("[VEICULO %d] A iniciar viagem de %d km...\n", id_servico_global, km_distancia);
 
-    for (int i = 1; i <= 10; i++){
-        sleep(1); 
-        printf("[VEICULO %d] TELEMETRIA: %d%% concluido.\n", id_servico_global, i * 10);
+    // Calcular tempo por cada 10% (velocidade = 1km/s)
+    // Ex: 30km -> 30s total -> 3s por iteração
+    int intervalo_segundos = km_distancia / 10;
+    if (intervalo_segundos < 1) intervalo_segundos = 1; // Mínimo de segurança
+
+    int viagem_cancelada = 0;
+
+    for (int i = 1; i <= 10; i++) {
+        
+        // --- PREPARAR O SELECT ---
+        fd_set read_fds;
+        FD_ZERO(&read_fds);
+        FD_SET(fd_veiculo, &read_fds); // Vamos vigiar o pipe
+
+        struct timeval timeout;
+        timeout.tv_sec = intervalo_segundos;
+        timeout.tv_usec = 0;
+
+        // "Select, espera aí até chegar dados OU o tempo acabar"
+        int resultado = select(fd_veiculo + 1, &read_fds, NULL, NULL, &timeout);
+
+        if (resultado == 0) {
+            // TIMEOUT: Passou o tempo, avançamos a viagem
+            printf("[VEICULO %d] TELEMETRIA: %d%% concluido.\n", id_servico_global, i * 10);
+        }
+        else if (resultado > 0) {
+            // DADOS RECEBIDOS: O cliente falou!
+            if (FD_ISSET(fd_veiculo, &read_fds)) {
+                char cmd[MAX_MESSAGE];
+                int n = read(fd_veiculo, cmd, sizeof(cmd));
+                if (n > 0) {
+                    cmd[n] = '\0'; // Garantir terminação da string
+                    
+                    // Verificar se é o comando "sair"
+                    if (strncmp(cmd, "sair", 4) == 0) {
+                        printf("[VEICULO %d] O cliente pediu para sair a meio!\n", id_servico_global);
+                        viagem_cancelada = 1;
+                        break; // Sai do ciclo for imediatamente
+                    }
+                }
+            }
+        }
+        else {
+            perror("[VEICULO] Erro no select");
+            break;
+        }
     }
 
-    printf("[VEICULO %d] Serviço concluido. A terminar.\n", id_servico_global);
+    // --- FIM DA VIAGEM ---
+    if (viagem_cancelada) {
+        printf("[VEICULO %d] Viagem terminada prematuramente.\n", id_servico_global);
+    } else {
+        printf("[VEICULO %d] Cheguei ao destino! Viagem concluida.\n", id_servico_global);
+    }
 
+    // AGORA SIM, fechamos tudo
+    close(fd_veiculo);
+    unlink(fifo_veiculo);
+    
     return 0;
 }
