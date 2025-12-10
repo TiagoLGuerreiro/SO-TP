@@ -16,8 +16,8 @@ int id_servico_global = 0;
 // Função que é ativada quando chega o sinal SIGUSR1
 void trata_cancelamento(int sinal) {
     // Escreve uma mensagem para saberes que funcionou
-    printf("\n[VEICULO %d] Recebi ordem de cancelamento (Sinal %d)!\n", getpid(), sinal);
-    printf("[VEICULO %d] A abortar tarefa e a regressar à base... Adeus!\n", getpid());
+    fprintf(stderr, "\n[VEICULO %d] Recebi ordem de cancelamento (Sinal %d)!\n", getpid(), sinal);
+    fprintf(stderr, "[VEICULO %d] A abortar tarefa e a regressar à base... Adeus!\n", getpid());
 
     exit(0); // Termina o processo do veículo imediatamente
 }
@@ -30,7 +30,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    int id_servico_global = atoi(argv[1]);
+    id_servico_global = atoi(argv[1]);
     int km_distancia = atoi(argv[2]);
     char *pipe_cliente = argv[3]; // O pipe para onde vamos mandar o "Cheguei"
 
