@@ -46,7 +46,6 @@ int main(int argc, char *argv[]) {
     close(fd_resp);
 
     // 5. Verificar Login
-    // 5. Verificar Login
     if (resp.success) {
         printf("\n=== LOGIN SUCESSO ===\n");
         printf("Msg: %s\n", resp.message);
