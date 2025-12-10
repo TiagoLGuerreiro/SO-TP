@@ -60,18 +60,25 @@ int main(int argc, char *argv[]) {
 
         if (pid == 0) {
             // PROCESSO FILHO: Escuta o Controlador/Veículo
-            // Reabre o pipe para leitura contínua (bloqueante)
-            // Nota: O open anterior consumiu a msg de login, este open espera novas
-            int fd_leitura = open(my_pipe, O_RDONLY); 
-            ControllerResponse notificacao;
+            
+            // O truque é usar um loop infinito que reabre o pipe sempre que a conexão cai
+            while(1) {
+                // Este open bloqueia até alguém (Controlador/Veículo) escrever
+                int fd_leitura = open(my_pipe, O_RDONLY); 
+                ControllerResponse notificacao;
 
-            while(read(fd_leitura, &notificacao, sizeof(ControllerResponse)) > 0) {
-                printf("\n[INFO]: %s\n> ", notificacao.message);
-                fflush(stdout); // Forçar a escrita no ecrã
+                // Lê enquanto houver dados. Quando retorna 0, o escritor fechou.
+                while(read(fd_leitura, &notificacao, sizeof(ControllerResponse)) > 0) {
+                    printf("\n[INFO]: %s\n> ", notificacao.message);
+                    fflush(stdout); 
+                }
+                
+                // Se chegámos aqui, foi porque o escritor (controlador) fechou o pipe.
+                // Fechamos o nosso lado e voltamos ao início do loop para reabrir e esperar nova msg.
+                close(fd_leitura);
             }
-            close(fd_leitura);
-            exit(0);
-        } 
+            exit(0); // Nunca chega aqui, morre só com o kill do pai
+        }
         else {
             // PROCESSO PAI: Lê do utilizador
             printf("A aguardar comandos (agendar, ler, sair)...\n> ");

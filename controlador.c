@@ -35,13 +35,15 @@ typedef struct
     char local[50];                   // Onde
     int estado;                       // 0=Agendado, 1=Em Execução, 2=Concluído
     int fd_telemetria;                // Para ler do veículo
-    int pid_veiculo
+    int pid_veiculo;
 } Servico;
 
 // VARIÁVEIS GLOBAIS
 ClienteRegistado frota_clientes[MAX_CLIENTES]; // Lista de Pessoas
 Servico lista_servicos[MAX_SERVICOS];          // Lista de Viagens
 int total_servicos = 0;                        // Contador de IDs
+long long total_km_percorridos = 0;            // COMANDO 'km'
+int MAX_VEICULOS_SIMULTANEOS = 0;              // Limite veiculos
 
 // Inicializa a lista de clientes a zero
 void init_clientes()
@@ -189,14 +191,28 @@ void iniciar_viagem(int index_servico)
 
 void verificar_agendamentos(int instante_atual)
 {
+    // 1. Contar quantos veículos estão ativos neste momento
+    int veiculos_ativos = 0;
+    for (int i = 0; i < MAX_SERVICOS; i++) {
+        if (lista_servicos[i].id != 0 && lista_servicos[i].estado == 1) {
+            veiculos_ativos++;
+        }
+    }
+
+    // 2. percorrer os agendamentos
     for (int i = 0; i < MAX_SERVICOS; i++)
     {
-        // Se o serviço existe, está apenas "Agendado" (0) e a hora chegou
+        // Se existe e está "Agendado" (estado 0)
         if (lista_servicos[i].id != 0 && lista_servicos[i].estado == 0)
         {
+            // Se já chegou a hora
             if (lista_servicos[i].hora_agendada <= instante_atual)
             {
-                iniciar_viagem(i);
+                // SÓ LANÇA SE HOUVER VAGAS NA FROTA
+                if (veiculos_ativos < MAX_VEICULOS_SIMULTANEOS) {
+                    iniciar_viagem(i);
+                    veiculos_ativos++; // Incrementa para não lançar demais no mesmo ciclo!
+                }
             }
         }
     }
@@ -226,10 +242,52 @@ void ler_telemetria_veiculos()
                 printf("[CONTROLADOR] Veículo do serviço %d terminou a ligação.\n", lista_servicos[i].id);
                 close(lista_servicos[i].fd_telemetria);
                 lista_servicos[i].estado = 2; // Marca como Concluído
+
+                total_km_percorridos += lista_servicos[i].distancia;
             }
         }
     }
 }
+
+void encerrar_sistema() {
+    printf("\n[SISTEMA] A encerrar... A limpar recursos.\n");
+
+    // 1. Mandar parar todos os veículos ativos
+    for (int i = 0; i < MAX_SERVICOS; i++) {
+        if (lista_servicos[i].id != 0 && lista_servicos[i].estado == 1) {
+            kill(lista_servicos[i].pid_veiculo, SIGUSR1);
+            printf("[SISTEMA] Sinal de paragem enviado ao veículo %d\n", lista_servicos[i].pid_veiculo);
+        }
+    }
+
+    // 2. Avisar Clientes (Requisito do enunciado)
+    // Como guardaste o pipe_nome na struct ClienteRegistado, podes usar isso!
+    ControllerResponse resp;
+    resp.success = 0;
+    strcpy(resp.message, "O sistema vai encerrar. Adeus!");
+    
+    for(int i=0; i<MAX_CLIENTES; i++) {
+        if(frota_clientes[i].ocupado) {
+            int fd = open(frota_clientes[i].pipe_nome, O_WRONLY | O_NONBLOCK);
+            if(fd != -1) {
+                write(fd, &resp, sizeof(ControllerResponse));
+                close(fd);
+            }
+        }
+    }
+
+    // 3. Apagar o FIFO do controlador
+    unlink(FIFO_CONTROLLER_REQUESTS);
+    
+    printf("[SISTEMA] Encerrado com sucesso.\n");
+    exit(0);
+}
+
+// Handler para o Ctrl+C
+void trata_ctrl_c(int sinal) {
+    encerrar_sistema();
+}
+
 
 void cliente_com()
 {
@@ -260,7 +318,9 @@ void cliente_com()
     ControllerResponse resp;
     int instante_atual = 0;
     char cmd_buffer[100]; // Buffer para o administrador
-
+    
+    signal(SIGINT, trata_ctrl_c);
+    
     while (1)
     {
         // --- A) LER PEDIDOS DOS CLIENTES (FIFO) ---
@@ -329,10 +389,39 @@ void cliente_com()
                     if (lista_servicos[i].id != 0)
                         printf(" > ID:%d | %s | Estado:%d | T:%d\n", lista_servicos[i].id, lista_servicos[i].username, lista_servicos[i].estado, lista_servicos[i].hora_agendada);
                 printf("----------------\n");
-            }
-            else if (strncmp(cmd_buffer, "cancelar", 8) == 0)
-            {
-
+            } else if (strcmp(cmd_buffer, "utiliz") == 0) {
+                printf("\n--- UTILIZADORES ---\n");
+                for (int i = 0; i < MAX_CLIENTES; i++){
+                    if (frota_clientes[i].ocupado){
+                        char estado_str[20] = "LIVRE";
+                        for(int j=0; j<MAX_SERVICOS; j++) {
+                             // Se encontrar um serviço deste cliente que não esteja concluído
+                             if(lista_servicos[j].id != 0 && lista_servicos[j].pid_cliente == frota_clientes[i].pid) {
+                                 if(lista_servicos[j].estado == 0) strcpy(estado_str, "A ESPERA");
+                                 if(lista_servicos[j].estado == 1) strcpy(estado_str, "EM VIAGEM");
+                             }
+                        }
+                        printf(" > %s (PID %d) - [%s]\n", frota_clientes[i].username, frota_clientes[i].pid, estado_str);
+                    }
+                }
+                printf("--------------------\n");
+            } else if (strcmp(cmd_buffer, "frota") == 0) {
+                printf("\n--- FROTA EM MOVIMENTO ---\n");
+                int ativos = 0;
+                for (int i = 0; i < MAX_SERVICOS; i++) {
+                    // Só mostra serviços em execução (estado 1)
+                    if (lista_servicos[i].id != 0 && lista_servicos[i].estado == 1) {
+                        printf(" > Veículo PID %d | Serviço ID %d | Cliente: %s\n", lista_servicos[i].pid_veiculo, lista_servicos[i].id, lista_servicos[i].username);
+                        ativos++;
+                    }
+                }
+                if(ativos == 0) printf(" (Nenhum veículo em movimento)\n");
+                printf("--------------------------\n");
+            } else if (strcmp(cmd_buffer, "km") == 0) {
+                printf("[SISTEMA] Total Km percorridos: %lld km\n", total_km_percorridos);
+            } else if (strcmp(cmd_buffer, "hora") == 0) {
+                printf("[SISTEMA] Tempo Simulado: T=%d\n", instante_atual);
+            } else if (strcmp(cmd_buffer, "cancelar") == 0) {
                 int id_cancelar;
                 if (sscanf(cmd_buffer, "cancelar %d", &id_cancelar) == 1){
                     int encontrado = 0;
@@ -364,8 +453,7 @@ void cliente_com()
             }
             else if (strcmp(cmd_buffer, "terminar") == 0)
             {
-                printf("[ADMIN] A encerrar sistema...\n");
-                // TPC: Aqui devias enviar sinal a todos os veículos para pararem antes de sair
+                encerrar_sistema();
                 break;
             }
             else
@@ -390,7 +478,17 @@ void cliente_com()
 
 int main()
 {
-    // veiculo_start_ler_telemetria(); // Podes descomentar depois
+    // Tenta ler a variável de ambiente
+    char *env_nveiculos = getenv("NVEICULOS");
+    if (env_nveiculos == NULL) {
+        printf("Aviso: NVEICULOS nao definido. A assumir 1.\n");
+        MAX_VEICULOS_SIMULTANEOS = 1; // Valor default seguro
+    } else {
+        MAX_VEICULOS_SIMULTANEOS = atoi(env_nveiculos);
+        if(MAX_VEICULOS_SIMULTANEOS > 10) 
+            MAX_VEICULOS_SIMULTANEOS = 10; // Limite enunciado
+    }
+
     cliente_com();
     return 0;
 }
