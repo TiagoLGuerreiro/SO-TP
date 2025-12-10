@@ -10,6 +10,8 @@
 #define CMD_LOGIN 1
 #define CMD_AGENDAR 2
 #define CMD_SAIR 3
+#define CMD_CONSULTAR 4
+#define CMD_CANCELAR_REQ 5
 
 // Estrutura enviada pelo Cliente -> Controlador
 typedef struct {

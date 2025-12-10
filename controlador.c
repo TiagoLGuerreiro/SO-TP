@@ -364,6 +364,79 @@ void cliente_com()
                     write(fd_resp, &resp, sizeof(ControllerResponse));
                     close(fd_resp);
                 }
+            } else if (req.command_type == CMD_CONSULTAR) {
+                // Montar uma string com todos os serviços deste PID
+                resp.success = 1;
+                strcpy(resp.message, ""); // Limpar msg
+                
+                int encontrou = 0;
+                char linha[100];
+                
+                // Enviar cabeçalho
+                // Nota: O buffer é pequeno (100 chars), se houver muitos serviços
+                // o ideal seria mandar várias mensagens, mas para simplificar vamos mandar 1 por 1.
+                
+                // Vamos enviar uma mensagem por cada serviço encontrado
+                for(int i=0; i<MAX_SERVICOS; i++) {
+                    if(lista_servicos[i].id != 0 && lista_servicos[i].pid_cliente == req.pid) {
+                        sprintf(linha, "ID:%d | T:%d | Estado:%d\n", 
+                                lista_servicos[i].id, lista_servicos[i].hora_agendada, lista_servicos[i].estado);
+                        
+                        // Envia mensagem intermédia
+                        ControllerResponse resp_temp;
+                        resp_temp.success = 1;
+                        strcpy(resp_temp.message, linha);
+                        
+                        int fd = open(req.response_pipe_name, O_WRONLY);
+                        if(fd != -1) {
+                            write(fd, &resp_temp, sizeof(ControllerResponse));
+                            close(fd);
+                        }
+                        encontrou = 1;
+                        usleep(10000); // Pequena pausa para não encavalar leituras no cliente
+                    }
+                }
+                
+                if(!encontrou) strcpy(resp.message, "Sem agendamentos.");
+                else strcpy(resp.message, "Fim da lista.");
+
+                // Envia a mensagem final
+                int fd_resp = open(req.response_pipe_name, O_WRONLY);
+                if (fd_resp != -1) {
+                    write(fd_resp, &resp, sizeof(ControllerResponse));
+                    close(fd_resp);
+                }
+            }
+            else if (req.command_type == CMD_CANCELAR_REQ) {
+                // O cliente enviou "cancelar ID" no campo 'data' ou podemos fazer parse
+                int id_cancelar = atoi(req.data);
+                int sucesso = 0;
+                
+                for(int i=0; i<MAX_SERVICOS; i++) {
+                    // Só pode cancelar se for DONO do serviço
+                    if(lista_servicos[i].id == id_cancelar && lista_servicos[i].pid_cliente == req.pid) {
+                        
+                        // Lógica de cancelamento (igual à do Admin)
+                        if (lista_servicos[i].estado == 1) {
+                            kill(lista_servicos[i].pid_veiculo, SIGUSR1);
+                            close(lista_servicos[i].fd_telemetria);
+                        }
+                        lista_servicos[i].id = 0;
+                        lista_servicos[i].estado = 0;
+                        sucesso = 1;
+                        break;
+                    }
+                }
+                
+                resp.success = sucesso;
+                if(sucesso) sprintf(resp.message, "Servico %d cancelado.", id_cancelar);
+                else sprintf(resp.message, "Erro: Servico nao encontrado ou nao e teu.");
+                
+                int fd_resp = open(req.response_pipe_name, O_WRONLY);
+                if (fd_resp != -1) {
+                    write(fd_resp, &resp, sizeof(ControllerResponse));
+                    close(fd_resp);
+                }
             }
             else if (req.command_type == CMD_SAIR)
             {
